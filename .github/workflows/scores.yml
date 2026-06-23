@@ -1,0 +1,24 @@
+name: Score Updates
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # toutes les 15 minutes
+  workflow_dispatch:         # lancement manuel depuis GitHub
+
+jobs:
+  send-scores:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installer dépendances
+        run: pip install requests
+
+      - name: Envoyer les scores
+        run: python scores.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
