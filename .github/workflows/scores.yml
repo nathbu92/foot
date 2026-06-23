@@ -3,15 +3,15 @@ name: Score Updates
 on:
   schedule:
     - cron: '*/15 * * * *'  # toutes les 15 minutes
-  workflow_dispatch:         # lancement manuel depuis GitHub
+  workflow_dispatch:
 
 jobs:
   send-scores:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -22,3 +22,11 @@ jobs:
         run: python scores.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Sauvegarder l'état
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add last_sent.json
+          git diff --cached --quiet || git commit -m "Update scores state"
+          git push
