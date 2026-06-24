@@ -4,71 +4,77 @@ from datetime import datetime
 
 WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
 
-LEAGUES = {
-    "Premier League":    {"id": "4328", "emoji": "🏴󠁧󠁢󠁥󠁮󠁧󠁿"},
-    "La Liga":           {"id": "4335", "emoji": "🇪🇸"},
-    "Serie A":           {"id": "4332", "emoji": "🇮🇹"},
-    "Bundesliga":        {"id": "4331", "emoji": "🇩🇪"},
-    "Ligue 1":           {"id": "4334", "emoji": "🇫🇷"},
-    "MLS":               {"id": "4346", "emoji": "🇺🇸"},
-    "Brasileirao":       {"id": "4351", "emoji": "🇧🇷"},
-    "Liga MX":           {"id": "4350", "emoji": "🇲🇽"},
-    "Argentine Primera": {"id": "4406", "emoji": "🇦🇷"},
-    "Eredivisie":        {"id": "4337", "emoji": "🇳🇱"},
-}
+LEAGUES = [
+    {"name": "Premier League",    "id": "4328", "emoji": "🏴󠁧󁢥󁮧󁿢"},
+    {"name": "La Liga",           "id": "4335", "emoji": "🇪🇸"},
+    {"name": "Serie A",           "id": "4332", "emoji": "🇮🇹"},
+    {"name": "Bundesliga",        "id": "4331", "emoji": "🇩🇪"},
+    {"name": "Ligue 1",           "id": "4334", "emoji": "🇫🇷"},
+    {"name": "MLS",               "id": "4346", "emoji": "🇺🇸"},
+    {"name": "Brasileirao",       "id": "4351", "emoji": "🇧🇷"},
+    {"name": "Liga MX",           "id": "4350", "emoji": "🇲🇽"},
+    {"name": "Argentine Primera", "id": "4406", "emoji": "🇦🇷"},
+    {"name": "Eredivisie",        "id": "4337", "emoji": "🇳🇱"},
+]
 
-def fetch_standings(league_id):
-    url = f"https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l={league_id}&s=2024-2025"
+MEDALS = ["🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10."]
+
+def fetch_leader(league):
+    url = f"https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l={league['id']}&s=2024-2025"
     try:
         r = requests.get(url, timeout=10)
-        return r.json().get("table") or []
-    except:
-        return []
+        table = r.json().get("table") or []
+        if table:
+            # Prend le 1er du classement
+            top = table[0]
+            return {
+                "team": top.get("strTeam", "?"),
+                "pts": top.get("intPoints", "?"),
+                "league": league["name"],
+                "emoji": league["emoji"],
+            }
+    except Exception as e:
+        print(f"Erreur {league['name']}: {e}")
+    return None
 
-def build_standings_embed(league_name, league_emoji, table):
-    lines = ["```"]
-    lines.append(f"{'#':<3} {'Équipe':<22} {'Pts':>4}")
-    lines.append("─" * 30)
-
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-
-    for row in table[:5]:
-        pos = int(row.get("intRank", 0))
-        team = (row.get("strTeam") or "?")[:20]
-        pts = row.get("intPoints", "-")
-        medal = medals.get(pos, f"{pos}. ")
-        lines.append(f"{medal:<3} {team:<22} {pts:>4} pts")
-
-    lines.append("```")
-
-    return {
-        "title": f"{league_emoji}  {league_name}",
-        "description": "\n".join(lines),
-        "color": 0xf1c40f,  # doré
-        "footer": {"text": f"⚽ Football Scores Bot  •  Top 5  •  {datetime.utcnow().strftime('%d/%m/%Y')}"}
-    }
-
-def send_embeds_batch(embeds, header=None):
-    for i in range(0, len(embeds), 10):
-        batch = embeds[i:i+10]
-        payload = {"embeds": batch}
-        if header and i == 0:
-            payload["content"] = header
-        requests.post(WEBHOOK, json=payload)
+def send_embed(embed):
+    r = requests.post(WEBHOOK, json={"embeds": [embed]})
+    print(f"Discord: {r.status_code}")
+    if r.status_code not in (200, 204):
+        print(f"Erreur: {r.text}")
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-embeds = []
-for league_name, league_info in LEAGUES.items():
-    table = fetch_standings(league_info["id"])
-    if table:
-        embeds.append(build_standings_embed(league_name, league_info["emoji"], table))
-        print(f"✓ {league_name}")
-    else:
-        print(f"✗ {league_name} — pas de données")
+print(f"=== Récap {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC ===")
 
-if embeds:
-    send_embeds_batch(embeds, header=f"☀️ **Bonjour ! Classements du {datetime.utcnow().strftime('%d/%m/%Y')} :**")
-    print(f"{len(embeds)} classements envoyés")
+leaders = []
+for league in LEAGUES:
+    result = fetch_leader(league)
+    if result:
+        leaders.append(result)
+        print(f"✓ {league['name']} → {result['team']} ({result['pts']} pts)")
+    else:
+        print(f"✗ {league['name']} → aucune donnée")
+
+if not leaders:
+    requests.post(WEBHOOK, json={"content": "😴 Aucun classement disponible (hors saison)."})
+    print("Aucun leader trouvé.")
 else:
-    requests.post(WEBHOOK, json={"content": "😴 Aucun classement disponible aujourd'hui."})
+    # Trier par points décroissant
+    leaders.sort(key=lambda x: int(x["pts"]) if str(x["pts"]).isdigit() else 0, reverse=True)
+
+    lines = []
+    for i, l in enumerate(leaders):
+        medal = MEDALS[i] if i < len(MEDALS) else f"{i+1}."
+        lines.append(f"{medal} {l['emoji']} **{l['team']}** — {l['pts']} pts  ·  *{l['league']}*")
+
+    embed = {
+        "title": "🌍  Leaders mondiaux du foot",
+        "description": "\n".join(lines),
+        "color": 0xf1c40f,
+        "footer": {"text": f"⚽ Football Scores Bot  •  {datetime.utcnow().strftime('%d/%m/%Y')}"},
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+    send_embed(embed)
+    print(f"{len(leaders)} leaders envoyés")
