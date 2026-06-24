@@ -1,0 +1,24 @@
+name: Récap du jour
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # tous les matins à 8h UTC
+  workflow_dispatch:        # déclenchement manuel depuis GitHub
+
+jobs:
+  send-recap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Installer dépendances
+        run: pip install requests
+
+      - name: Envoyer le récap
+        run: python recap.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
