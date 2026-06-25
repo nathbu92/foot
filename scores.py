@@ -47,7 +47,8 @@ def fetch_matches(league_id, date_str):
     try:
         r = requests.get(url, timeout=10)
         return r.json().get("events") or []
-    except:
+    except Exception as e:
+        print(f"Erreur fetch {league_id} {date_str}: {e}")
         return []
 
 def build_score_embed(m, league_name, league_emoji):
@@ -73,17 +74,17 @@ def build_score_embed(m, league_name, league_emoji):
         winner_line = "🤝 Match nul"
 
     date_val = m.get("dateEvent") or ""
-    time_val = (m.get("strTime") or "")[:5]  # juste HH:MM
+    time_val = (m.get("strTime") or "")[:5]
     time_display = f"{date_val} — {time_val} UTC" if date_val and time_val else date_val
 
-    description = "\n".join([
+    description = "\n".join(filter(None, [
         f"🏠 {home_display}",
         f"# {hs}  —  {as_}",
         f"✈️ {away_display}",
         "",
         f"{status_label}  •  {winner_line}",
         f"🗓 {time_display}" if time_display else "",
-    ]).rstrip()
+    ]))
 
     embed = {
         "title": f"{league_emoji}  {league_name}",
@@ -91,7 +92,6 @@ def build_score_embed(m, league_name, league_emoji):
         "color": color,
         "footer": {"text": f"⚽ Football Scores Bot  •  {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC"}
     }
-    # Seulement le logo domicile en petit thumbnail — pas d'image géante en bas
     if home_badge:
         embed["thumbnail"] = {"url": home_badge}
     return embed
@@ -113,7 +113,7 @@ def build_reminder_embed(m, league_name, league_emoji, hours_before):
         title = "🚨 Dans 15 minutes !"
         color = 0xe74c3c
 
-    description = "\n".join([
+    description = "\n".join(filter(None, [
         f"{league_emoji}  **{league_name}**",
         "",
         f"🏠 **{home}**",
@@ -121,7 +121,7 @@ def build_reminder_embed(m, league_name, league_emoji, hours_before):
         f"✈️ **{away}**",
         "",
         f"🗓 {date_val} — {time_val} UTC",
-    ])
+    ]))
 
     embed = {
         "title": title,
@@ -139,7 +139,9 @@ def send_embeds_batch(embeds, header=None):
         payload = {"embeds": batch}
         if header and i == 0:
             payload["content"] = header
-        requests.post(WEBHOOK, json=payload)
+        r = requests.post(WEBHOOK, json=payload)
+        if r.status_code not in (200, 204):
+            print(f"Erreur Discord: {r.status_code} — {r.text[:200]}")
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -148,13 +150,14 @@ first_run = len(state) == 0
 now_utc = datetime.utcnow()
 today = now_utc.strftime("%Y-%m-%d")
 
+print(f"=== {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC — first_run={first_run} ===")
+
 score_embeds = []
 reminder_embeds = []
 
 if first_run:
     dates = [(now_utc - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(29, -1, -1)]
-    send_embeds_batch([], header="🚀 **Premier lancement — Envoi de l'historique des 30 derniers jours...**")
-    print("Premier run")
+    send_embeds_batch([], header="🚀 **Premier lancement — Historique des 30 derniers jours...**")
 else:
     dates = [today]
 
@@ -163,9 +166,11 @@ for date_str in dates:
         matches = fetch_matches(league_info["id"], date_str)
         for m in matches:
             match_id = m.get("idEvent")
-            current_score = f"{m['intHomeScore']}-{m['intAwayScore']}-{m.get('strStatus','')}"
+            hs = m["intHomeScore"]
+            as_ = m["intAwayScore"]
+            current_score = f"{hs}-{as_}-{m.get('strStatus','')}"
             last = state.get(match_id)
-            has_score = m["intHomeScore"] is not None
+            has_score = hs is not None
 
             if first_run:
                 if has_score:
@@ -173,12 +178,12 @@ for date_str in dates:
                     state[match_id] = current_score
             else:
                 if has_score and current_score != last:
+                    print(f"Nouveau score : {m['strHomeTeam']} {hs}-{as_} {m['strAwayTeam']} ({league_name})")
                     send_embeds_batch(
                         [build_score_embed(m, league_name, league_info["emoji"])],
                         header="📊 **Nouveau résultat !**"
                     )
                     state[match_id] = current_score
-                    print(f"Score : {m['strHomeTeam']} {hs}-{as_} {m['strAwayTeam']}")
 
             # Rappels 2h / 1h / 15min
             if not first_run and date_str == today and not has_score:
@@ -193,6 +198,7 @@ for date_str in dates:
                             pass
                     if kickoff:
                         diff = (kickoff - now_utc).total_seconds() / 60
+                        print(f"Match dans {diff:.0f} min : {m['strHomeTeam']} vs {m['strAwayTeam']}")
                         for key_prefix, low, high, h in [
                             ("r120", 115, 125, 2),
                             ("r60",   55,  65, 1),
@@ -200,16 +206,20 @@ for date_str in dates:
                         ]:
                             key = f"{key_prefix}_{match_id}"
                             if low <= diff <= high and not state.get(key):
+                                print(f"→ Rappel {h}h envoyé !")
                                 reminder_embeds.append(build_reminder_embed(m, league_name, league_info["emoji"], h))
                                 state[key] = True
 
 if first_run and score_embeds:
     send_embeds_batch(score_embeds, header="📅 **Historique des résultats**")
-    print(f"{len(score_embeds)} scores envoyés")
+    print(f"{len(score_embeds)} scores historique envoyés")
 
 if reminder_embeds:
     send_embeds_batch(reminder_embeds, header="📣 **Rappel — Match imminent !**")
     print(f"{len(reminder_embeds)} rappels envoyés")
+
+if not first_run and not score_embeds and not reminder_embeds:
+    print("Rien de nouveau.")
 
 save_state(state)
 print("Done.")

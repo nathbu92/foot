@@ -2,7 +2,7 @@ name: Score Updates
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # toutes les 15 minutes
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -18,15 +18,20 @@ jobs:
       - name: Installer dépendances
         run: pip install requests
 
+      - name: Restaurer l'état
+        uses: actions/cache@v4
+        with:
+          path: last_sent.json
+          key: scores-state-v1
+          restore-keys: scores-state-v1
+
       - name: Envoyer les scores
         run: python scores.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       - name: Sauvegarder l'état
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add last_sent.json
-          git diff --cached --quiet || git commit -m "Update scores state"
-          git push
+        uses: actions/cache/save@v4
+        with:
+          path: last_sent.json
+          key: scores-state-v1-${{ github.run_id }}

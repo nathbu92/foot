@@ -1,9 +1,9 @@
-name: Récap du jour
+name: Recap du jour
 
 on:
   schedule:
-    - cron: '0 8 * * *'   # tous les matins à 8h UTC
-  workflow_dispatch:        # déclenchement manuel depuis GitHub
+    - cron: '0 8 * * *'
+  workflow_dispatch:
 
 jobs:
   send-recap:
@@ -18,7 +18,7 @@ jobs:
       - name: Installer dépendances
         run: pip install requests
 
-      - name: Envoyer le récap
+      - name: Envoyer le recap
         run: python recap.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
